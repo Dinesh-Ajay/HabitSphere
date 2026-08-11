@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HabitSphere | Build better days</title>
+  <link rel="icon" href="data:," />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="static/css/style.css" />
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="#"><span class="brand-mark">✦</span><span>Habit<span>Sphere</span></span></a>
+    <nav>
+      <button class="nav-item active" data-view="dashboard"><span>⌂</span> Dashboard</button>
+      <button class="nav-item" data-view="habits"><span>◎</span> My habits</button>
+      <button class="nav-item" data-view="tracker"><span>✓</span> Daily tracker</button>
+      <button class="nav-item" data-view="insights"><span>◔</span> Insights</button>
+      <button class="nav-item" data-view="reports"><span>▤</span> Reports</button>
+      <button class="nav-item" data-view="settings"><span>⚙</span> Settings</button>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="quote">“Small disciplines repeated with consistency lead to great achievements.”</div>
+      <div class="profile"><div class="avatar" id="profileInitial">Y</div><div><strong id="profileName">Your journey</strong><small id="profileEmail">Keep showing up</small></div></div>
+      <button class="logout-button" id="logoutButton" type="button">↪ Log out</button>
+    </div>
+  </aside>
+
+  <main>
+    <header class="topbar">
+      <div><p class="eyebrow" id="todayLabel"></p><h1 id="pageTitle">Good morning, achiever.</h1></div>
+      <div class="top-actions"><button class="icon-button" id="themeButton" aria-label="Toggle theme">☼</button><button class="primary-button" id="openModal">+ Add habit</button></div>
+    </header>
+
+    <section id="dashboardView" class="view active">
+      <div class="hero-card"><div><p class="eyebrow">YOUR DAILY FOCUS</p><h2 id="focusText">Make today count.</h2><p id="focusDescription">Complete your habits and move one step closer to the person you want to be.</p></div><div class="progress-ring" id="progressRing"><div><strong id="dailyPercent">0%</strong><span>complete</span></div></div></div>
+      <section class="stat-grid dashboard-stat-grid">
+        <article class="stat-card"><div class="stat-icon purple">◎</div><div><span>Total habits</span><strong id="totalHabitsStat">0</strong></div></article>
+        <article class="stat-card"><div class="stat-icon green">●</div><div><span>Active habits</span><strong id="activeHabitsStat">0</strong></div></article>
+        <article class="stat-card"><div class="stat-icon blue">✓</div><div><span>Completed today</span><strong id="completedStat">0</strong></div></article>
+        <article class="stat-card"><div class="stat-icon orange">♨</div><div><span>Current streak</span><strong id="streakStat">0 days</strong></div></article>
+        <article class="stat-card"><div class="stat-icon purple">★</div><div><span>Longest streak</span><strong id="longestStreakStat">0 days</strong></div></article>
+        <article class="stat-card"><div class="stat-icon blue">↗</div><div><span>Overall completion</span><strong id="overallPercentageStat">0%</strong><span id="consistencyStat" hidden>0%</span></div></article>
+      </section>
+      <section class="dashboard-bottom-grid">
+        <div class="panel goal-progress-panel"><div class="panel-heading"><div><p class="eyebrow">GOAL PROGRESS</p><h2>Stay on track</h2></div></div><div class="goal-row"><div class="goal-label"><span>Weekly goal</span><strong id="weeklyGoalText">0 / 0</strong></div><div class="progress-track"><div class="progress-fill purple-fill" id="weeklyGoalBar" style="width:0%"></div></div></div><div class="goal-row"><div class="goal-label"><span>Monthly goal</span><strong id="monthlyGoalText">0 / 0</strong></div><div class="progress-track"><div class="progress-fill blue-fill" id="monthlyGoalBar" style="width:0%"></div></div></div></div>
+        <div class="panel quick-actions"><p class="eyebrow">QUICK ACTIONS</p><h2>Make progress today</h2><div><button class="quick-action" id="quickAddHabit">＋ <span>Add habit</span></button><button class="quick-action" id="quickTrackToday">✓ <span>Track today</span></button><button class="quick-action" id="quickViewReports">◔ <span>View reports</span></button></div></div>
+      </section>
+      <section class="content-grid">
+        <div class="panel habits-panel"><div class="panel-heading"><div><p class="eyebrow">TODAY</p><h2>Your habits</h2></div><button class="text-button" data-view-target="habits">View all →</button></div><div id="todayHabits" class="habit-list"></div></div>
+        <div class="panel activity-panel"><div class="panel-heading"><div><p class="eyebrow">CONSISTENCY</p><h2>Weekly activity</h2></div><span class="trend" id="trendText">Start today</span></div><div id="weekChart" class="week-chart"></div><div class="chart-legend"><span><i></i> Completed habits</span><span>Past 7 days</span></div></div>
+      </section>
+      <section class="panel suggestion-panel"><div class="suggestion-icon">✦</div><div><p class="eyebrow">PERSONALISED NUDGE</p><h2 id="suggestionTitle">Your next win starts now</h2><p id="suggestionText">Add your first habit, then turn your intention into a daily action.</p></div></section>
+    </section>
+
+    <section id="habitsView" class="view"><div class="section-heading"><div><p class="eyebrow">YOUR ROUTINES</p><h2>Habit management</h2></div><button class="primary-button secondary-add" id="openModalSecondary">+ Add habit</button></div><div class="panel habit-management-panel"><div class="habit-controls"><input id="habitSearch" type="search" placeholder="Search habits by name"><select id="categoryFilter"><option value="">All categories</option></select><select id="goalTypeFilter"><option value="">All goal types</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select><select id="statusFilter"><option value="">All statuses</option><option value="active">Active</option><option value="inactive">Inactive</option></select></div><div class="table-wrap"><table class="habit-table"><thead><tr><th>Habit</th><th>Category</th><th>Goal</th><th>Target</th><th>Started</th><th>Status</th><th>Actions</th></tr></thead><tbody id="habitTableBody"></tbody></table></div><div id="habitTableEmpty" class="empty-state">No habits found. Add your first habit to get started.</div></div><div id="habitDetail" class="habit-detail" hidden></div><div id="allHabits" hidden></div></section>
+
+    <section id="insightsView" class="view"><div class="section-heading"><div><p class="eyebrow">DATA THAT HELPS</p><h2>Progress insights</h2></div><div class="segment-control"><button class="segment active" data-period="7">Week</button><button class="segment" data-period="30">Month</button></div></div><div class="insight-grid"><div class="panel"><div class="panel-heading"><div><p class="eyebrow">PERFORMANCE</p><h2>Completion rates</h2></div></div><div id="performanceBars" class="performance-bars"></div></div><div class="panel report-card"><p class="eyebrow">YOUR REPORT</p><h2 id="reportHeading">This week's reflection</h2><div id="reportContent"></div></div></div></section>
+    <section id="trackerView" class="view"><div class="section-heading"><div><p class="eyebrow">DAILY HABIT TRACKER</p><h2>Track your day</h2></div><input id="trackerDate" type="date"></div><div id="trackerCalendar" class="tracker-calendar"></div><div id="trackerList" class="tracker-list"></div></section>
+    <section id="reportsView" class="view"><div class="section-heading"><div><p class="eyebrow">REAL DATA EXPORTS</p><h2>Reports & charts</h2></div></div><div class="report-actions"><button class="primary-button" data-report="daily">Daily report</button><button class="primary-button" data-report="weekly">Weekly report</button><button class="primary-button" data-report="monthly">Monthly report</button><button class="primary-button" id="generateCharts">Generate charts</button></div><div id="reportResult" class="panel" hidden></div><div id="chartGrid" class="chart-grid"></div></section>
+    <section id="settingsView" class="view"><div class="section-heading"><div><p class="eyebrow">APPLICATION PREFERENCES</p><h2>Settings</h2></div></div><form id="settingsForm" class="panel settings-form"><label>Theme<select id="settingTheme"><option value="light">Light</option><option value="dark">Dark</option></select></label><label>Default section<select id="settingView"><option value="dashboard">Dashboard</option><option value="habits">Habits</option><option value="tracker">Daily tracker</option><option value="insights">Insights</option><option value="reports">Reports</option></select></label><label>Weekly goal<input id="settingWeekly" type="number" min="1"></label><label>Monthly goal<input id="settingMonthly" type="number" min="1"></label><label>Default export<select id="settingExport"><option value="csv">CSV</option><option value="txt">TXT</option></select></label><button class="primary-button" type="submit">Save settings</button></form></section>
+  </main>
+
+  <div class="modal-backdrop" id="modalBackdrop" aria-hidden="true"><form class="modal" id="habitForm"><button type="button" class="close-button" id="closeModal" aria-label="Close">×</button><p class="eyebrow">START A NEW ROUTINE</p><h2>Create a habit</h2><label>Habit name<input id="habitName" required maxlength="40" placeholder="e.g. Read for 20 minutes" /></label><div class="form-row"><label>Frequency<select id="habitFrequency"><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select></label><label>Goal <input id="habitGoal" type="number" value="1" min="1" max="31" required /></label></div><label>Choose a colour<div class="color-options"><input checked type="radio" name="color" value="violet" id="violet"><label for="violet" class="color violet"></label><input type="radio" name="color" value="orange" id="orange"><label for="orange" class="color orange"></label><input type="radio" name="color" value="blue" id="blue"><label for="blue" class="color blue"></label><input type="radio" name="color" value="green" id="green"><label for="green" class="color green"></label></div></label><button class="primary-button submit-button" type="submit">Create habit <span>→</span></button></form></div>
+  <div id="toast" class="toast" role="status"></div>
+  <section class="auth-gate" id="authGate" aria-live="polite">
+    <div class="auth-intro">
+      <a class="brand" href="#"><span class="brand-mark">✦</span><span>Habit<span>Sphere</span></span></a>
+      <div><p class="eyebrow">A BETTER ROUTINE STARTS HERE</p><h2>Build days you are proud of.</h2><p>Track the small actions that create lasting change. Your progress, all in one calm space.</p></div>
+      <div class="auth-benefits"><span>✓ Secure personal account</span><span>✓ Meaningful progress insights</span><span>✓ Build consistency, one day at a time</span></div>
+    </div>
+    <div class="auth-panel"><div class="auth-card">
+      <div class="auth-tabs"><button class="auth-tab active" type="button" data-auth-mode="login">Sign in</button><button class="auth-tab" type="button" data-auth-mode="register">Create account</button></div>
+      <div id="authFeedback" class="auth-feedback" role="alert"></div>
+      <form id="loginForm" class="auth-form"><h2>Welcome back</h2><p>Sign in to continue your journey.</p><label>Email address<input id="loginEmail" type="email" autocomplete="email" required placeholder="you@example.com"></label><label>Password<input id="loginPassword" type="password" autocomplete="current-password" required placeholder="Enter your password"></label><button class="primary-button" type="submit">Sign in <span>→</span></button><button type="button" class="auth-link" data-auth-mode="register">New to HabitSphere? Create an account</button></form>
+      <form id="registerForm" class="auth-form hidden"><h2>Create your account</h2><p>Start building your best routine today.</p><label>Full name<input id="registerName" type="text" autocomplete="name" required minlength="2" maxlength="100" placeholder="Your full name"></label><label>Email address<input id="registerEmail" type="email" autocomplete="email" required placeholder="you@example.com"></label><label>Password<input id="registerPassword" type="password" autocomplete="new-password" required minlength="8" placeholder="At least 8 characters"></label><button class="primary-button" type="submit">Create account <span>→</span></button><button type="button" class="auth-link" data-auth-mode="login">Already have an account? Sign in</button></form>
+    </div></div>
+  </section>
+  <script src="static/js/app.js"></script>
+</body>
+</html>

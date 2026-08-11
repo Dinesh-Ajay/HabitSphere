@@ -1,0 +1,28 @@
+# Virtual environment
+venv/
+.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Logs
+*.log
+logs/
+
+# Generated reports
+reports/csv/*
+reports/txt/*
+
+# Generated charts
+static/charts/*
+
+# Local data
+habits_data.json
+
+# Local secrets/configuration
+.env
+json/settings.json
+
+# Legacy JSON-based terminal prototype
+habitsphere.py
