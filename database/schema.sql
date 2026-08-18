@@ -29,11 +29,31 @@ CREATE TABLE IF NOT EXISTS HABIT_COMPLETION (
     completion_id INT AUTO_INCREMENT PRIMARY KEY,
     habit_id INT NOT NULL,
     completion_date DATE NOT NULL,
+    completion_time TIME NULL,
     completed BOOLEAN NOT NULL,
     completion_count INT NOT NULL,
     notes TEXT,
     CONSTRAINT fk_completion_habit
         FOREIGN KEY (habit_id) REFERENCES HABITS(habit_id)
+        ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS HABIT_REMINDERS (
+    reminder_id INT AUTO_INCREMENT PRIMARY KEY,
+    habit_id INT NOT NULL,
+    user_id INT NOT NULL,
+    reminder_type ENUM('daily', 'weekly', 'monthly') NOT NULL,
+    reminder_date DATE NOT NULL,
+    sent_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_habit_reminder_period
+        UNIQUE (habit_id, reminder_type, reminder_date),
+    KEY idx_reminder_habit_owner (habit_id, user_id),
+    KEY idx_reminder_user_period (user_id, reminder_date, reminder_type),
+    CONSTRAINT fk_reminder_user
+        FOREIGN KEY (user_id) REFERENCES USERS(user_id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_reminder_habit_owner
+        FOREIGN KEY (habit_id, user_id) REFERENCES HABITS(habit_id, user_id)
         ON DELETE CASCADE
 );
 

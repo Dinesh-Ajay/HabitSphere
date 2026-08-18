@@ -158,13 +158,37 @@ async function habitRequest(url, method = 'GET', payload = null) {
   return result;
 }
 function setupHabitForm() {
-  const form = $('#habitForm');
-  form.querySelector('.eyebrow').textContent = 'HABIT MANAGEMENT';
-  form.querySelector('h2').id = 'habitModalTitle';
-  form.querySelector('.color-options').parentElement.remove();
-  $('#habitName').closest('label').insertAdjacentHTML('afterend', '<label>Description<textarea id="habitDescription" maxlength="1000" placeholder="What does this habit involve?"></textarea></label><label>Category<input id="habitCategory" maxlength="80" required placeholder="e.g. Health, Learning"></label>');
-  form.querySelector('.form-row').insertAdjacentHTML('afterend', '<label>Status<select id="habitStatus"><option value="active">Active</option><option value="inactive">Inactive</option></select></label><p class="form-help">The start date is recorded automatically when the habit is created.</p>');
-  form.onsubmit = submitHabitForm;
+    const form = $('#habitForm');
+
+    form.querySelector('.eyebrow').textContent = 'HABIT MANAGEMENT';
+    form.querySelector('h2').id = 'habitModalTitle';
+
+    // Remove color selection
+    form.querySelector('.color-options').parentElement.remove();
+
+    // Add Description after Habit Name
+    $('#habitName').closest('label').insertAdjacentHTML(
+        'afterend',
+        '<label>Description<textarea id="habitDescription" maxlength="1000" placeholder="What does this habit involve?"></textarea></label>'
+    );
+
+    // Get existing fields
+    const formRow = form.querySelector('.form-row');
+    const categoryLabel = $('#habitCategory').closest('label');
+    const frequencyLabel = $('#habitFrequency').closest('label');
+    const goalLabel = $('#habitGoal').closest('label');
+
+    formRow.parentNode.insertBefore(categoryLabel, formRow);
+
+    formRow.appendChild(goalLabel);
+
+    formRow.insertAdjacentHTML(
+        'afterend',
+        '<label>Status<select id="habitStatus"><option value="active">Active</option><option value="inactive">Inactive</option></select></label>' +
+        '<p class="form-help">The start date is recorded automatically when the habit is created.</p>'
+    );
+
+    form.onsubmit = submitHabitForm;
 }
 function habitPayload() { return { habit_name: $('#habitName').value, description: $('#habitDescription').value, category: $('#habitCategory').value, goal_type: $('#habitFrequency').value, target_count: Number($('#habitGoal').value), status: $('#habitStatus').value }; }
 function openHabitModal(habit = null) { const form = $('#habitForm'); form.reset(); form.dataset.habitId = habit ? habit.habit_id : ''; $('#habitModalTitle').textContent = habit ? 'Edit habit' : 'Create a habit'; if (habit) { $('#habitName').value = habit.habit_name; $('#habitDescription').value = habit.description || ''; $('#habitCategory').value = habit.category; $('#habitFrequency').value = habit.goal_type; $('#habitGoal').value = habit.target_count; $('#habitStatus').value = habit.status; } $('#modalBackdrop').classList.add('open'); $('#habitName').focus(); }

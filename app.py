@@ -10,7 +10,12 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from configuration import load_environment
+
+load_environment()
+
 from habit_tracker import Analytics, ChartGenerator, DashboardService, DatabaseManager, Habit, HabitTracker, JSONManager, ReportGenerator, SessionManager, User, logger
+from reminder_scheduler import ReminderScheduler
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -227,6 +232,8 @@ class HabitSphereRequestHandler(SimpleHTTPRequestHandler):
 def run_server() -> None:
     settings = JSONManager().load_settings()["server"]
     server = ThreadingHTTPServer((settings["host"], settings["port"]), HabitSphereRequestHandler)
+    reminder_scheduler = ReminderScheduler()
+    reminder_scheduler.start()
     logger.info("HabitSphere server started at http://%s:%s", settings["host"], settings["port"])
     print(f"HabitSphere is running at http://{settings['host']}:{settings['port']}")
     try:
@@ -234,6 +241,7 @@ def run_server() -> None:
     except KeyboardInterrupt:
         logger.info("HabitSphere server stopped")
     finally:
+        reminder_scheduler.stop()
         server.server_close()
 
 

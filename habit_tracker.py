@@ -131,6 +131,8 @@ class DatabaseManager:
             for statement in statements:
                 if statement.strip():
                     cursor.execute(statement)
+                    if "CREATE TABLE IF NOT EXISTS HABITS" in statement.upper():
+                        self._ensure_habit_owner_index(cursor)
             connection.commit()
             cursor.close()
             connection.close()
@@ -138,6 +140,24 @@ class DatabaseManager:
         except (OSError, Error, RuntimeError) as error:
             logger.exception("Schema initialization failed")
             raise RuntimeError(f"Schema initialization failed: {error}") from error
+
+    @staticmethod
+    def _ensure_habit_owner_index(cursor) -> None:
+        """Creates the composite key needed to keep reminder ownership consistent."""
+        cursor.execute(
+            """
+            SELECT 1
+            FROM information_schema.statistics
+            WHERE table_schema = DATABASE()
+              AND table_name = 'HABITS'
+              AND index_name = 'uq_habit_owner'
+            LIMIT 1
+            """
+        )
+        if cursor.fetchone() is None:
+            cursor.execute(
+                "ALTER TABLE HABITS ADD UNIQUE INDEX uq_habit_owner (habit_id, user_id)"
+            )
 
 
 class PasswordManager:
@@ -510,36 +530,134 @@ class HabitTracker:
 
     def record_completion(self, user_id: int, payload: dict[str, Any]) -> None:
         try:
-            habit_id = int(payload.get("habit_id", 0)); completion_count = int(payload.get("completion_count", 0))
+            habit_id = int(payload.get("habit_id", 0))
+            completion_count = int(payload.get("completion_count", 0))
         except (TypeError, ValueError) as error:
             raise ValueError("Habit ID and completion count must be whole numbers.") from error
+
         completion_date = self._parse_date(payload.get("completion_date", ""))
-        completed = bool(payload.get("completed", False)); notes = str(payload.get("notes", "")).strip()
-        if habit_id < 1 or completion_count < 0 or completion_count > 1000: raise ValueError("Invalid completion values.")
-        if completed and completion_count < 1: raise ValueError("Completed habits need a count of at least 1.")
-        if len(notes) > 1000: raise ValueError("Notes must be at most 1000 characters.")
+        completed = bool(payload.get("completed", False))
+
+        # Save the exact time when the habit reaches its target.
+        completion_time = datetime.now().time() if completed else None
+
+        notes = str(payload.get("notes", "")).strip()
+
+        if habit_id < 1 or completion_count < 0 or completion_count > 1000:
+            raise ValueError("Invalid completion values.")
+
+        if completed and completion_count < 1:
+            raise ValueError("Completed habits need a count of at least 1.")
+
+        if len(notes) > 1000:
+            raise ValueError("Notes must be at most 1000 characters.")
+
         connection = cursor = None
+
         try:
-            connection = self.database.connect(); cursor = connection.cursor()
-            cursor.execute("SELECT target_count FROM HABITS WHERE habit_id=%s AND user_id=%s AND status='active'", (habit_id, user_id))
+            connection = self.database.connect()
+            cursor = connection.cursor()
+
+            cursor.execute(
+                """
+                SELECT target_count
+                FROM HABITS
+                WHERE habit_id=%s
+                AND user_id=%s
+                AND status='active'
+                """,
+                (habit_id, user_id)
+            )
+
             habit = cursor.fetchone()
-            if not habit: raise ValueError("Habit not found or inactive.")
+
+            if not habit:
+                raise ValueError("Habit not found or inactive.")
+
             target_count = int(habit[0])
+
+            # A habit is completed only when the entered count
+            # reaches the target.
             completed = completed and completion_count >= target_count
-            cursor.execute("SELECT completion_id FROM HABIT_COMPLETION WHERE habit_id=%s AND completion_date=%s", (habit_id, completion_date))
+
+            # If the target was not actually reached,
+            # there should be no completion time.
+            completion_time = datetime.now().time() if completed else None
+
+            cursor.execute(
+                """
+                SELECT completion_id
+                FROM HABIT_COMPLETION
+                WHERE habit_id=%s
+                AND completion_date=%s
+                """,
+                (habit_id, completion_date)
+            )
+
             existing = cursor.fetchone()
+
             if existing:
-                cursor.execute("UPDATE HABIT_COMPLETION SET completed=%s, completion_count=%s, notes=%s WHERE completion_id=%s", (completed, completion_count, notes, existing[0]))
+                cursor.execute(
+                    """
+                    UPDATE HABIT_COMPLETION
+                    SET completed=%s,
+                        completion_time=%s,
+                        completion_count=%s,
+                        notes=%s
+                    WHERE completion_id=%s
+                    """,
+                    (
+                        completed,
+                        completion_time,
+                        completion_count,
+                        notes,
+                        existing[0]
+                    )
+                )
             else:
-                cursor.execute("INSERT INTO HABIT_COMPLETION (habit_id, completion_date, completed, completion_count, notes) VALUES (%s,%s,%s,%s,%s)", (habit_id, completion_date, completed, completion_count, notes))
-            connection.commit(); logger.info("Completion recorded: habit_id=%s user_id=%s completed=%s", habit_id, user_id, completed)
+                cursor.execute(
+                    """
+                    INSERT INTO HABIT_COMPLETION
+                    (
+                        habit_id,
+                        completion_date,
+                        completion_time,
+                        completed,
+                        completion_count,
+                        notes
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        habit_id,
+                        completion_date,
+                        completion_time,
+                        completed,
+                        completion_count,
+                        notes
+                    )
+                )
+
+            connection.commit()
+
+            logger.info(
+                "Completion recorded: habit_id=%s user_id=%s completed=%s time=%s",
+                habit_id,
+                user_id,
+                completed,
+                completion_time
+            )
+
         except Error as error:
             logger.exception("Completion recording failed")
             raise RuntimeError("Unable to save completion. Please try again.") from error
-        finally:
-            if cursor: cursor.close()
-            if connection and connection.is_connected(): connection.close()
 
+        finally:
+            if cursor:
+                cursor.close()
+
+            if connection and connection.is_connected():
+                connection.close()
 
 class Analytics:
     """Calculates and persists habit performance metrics with Pandas-ready records."""

@@ -63,7 +63,21 @@
     <section id="settingsView" class="view"><div class="section-heading"><div><p class="eyebrow">APPLICATION PREFERENCES</p><h2>Settings</h2></div></div><form id="settingsForm" class="panel settings-form"><label>Theme<select id="settingTheme"><option value="light">Light</option><option value="dark">Dark</option></select></label><label>Default section<select id="settingView"><option value="dashboard">Dashboard</option><option value="habits">Habits</option><option value="tracker">Daily tracker</option><option value="insights">Insights</option><option value="reports">Reports</option></select></label><label>Weekly goal<input id="settingWeekly" type="number" min="1"></label><label>Monthly goal<input id="settingMonthly" type="number" min="1"></label><label>Default export<select id="settingExport"><option value="csv">CSV</option><option value="txt">TXT</option></select></label><button class="primary-button" type="submit">Save settings</button></form></section>
   </main>
 
-  <div class="modal-backdrop" id="modalBackdrop" aria-hidden="true"><form class="modal" id="habitForm"><button type="button" class="close-button" id="closeModal" aria-label="Close">×</button><p class="eyebrow">START A NEW ROUTINE</p><h2>Create a habit</h2><label>Habit name<input id="habitName" required maxlength="40" placeholder="e.g. Read for 20 minutes" /></label><div class="form-row"><label>Frequency<select id="habitFrequency"><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select></label><label>Goal <input id="habitGoal" type="number" value="1" min="1" max="31" required /></label></div><label>Choose a colour<div class="color-options"><input checked type="radio" name="color" value="violet" id="violet"><label for="violet" class="color violet"></label><input type="radio" name="color" value="orange" id="orange"><label for="orange" class="color orange"></label><input type="radio" name="color" value="blue" id="blue"><label for="blue" class="color blue"></label><input type="radio" name="color" value="green" id="green"><label for="green" class="color green"></label></div></label><button class="primary-button submit-button" type="submit">Create habit <span>→</span></button></form></div>
+  <div class="modal-backdrop" id="modalBackdrop" aria-hidden="true"><form class="modal" id="habitForm"><button type="button" class="close-button" id="closeModal" aria-label="Close">×</button><p class="eyebrow">START A NEW ROUTINE</p><h2>Create a habit</h2><label>Habit name<input id="habitName" required maxlength="40" placeholder="e.g. Read for 20 minutes" /></label><div class="form-row">
+  <label>
+      Category
+      <select id="habitCategory" required>
+          <option value="" selected disabled>Select a category</option>
+          <option value="Learning">Learning</option>
+          <option value="Divine">Divine</option>
+          <option value="Relaxing">Relaxing</option>
+          <option value="Un-Healthy">Un-Healthy</option>
+          <option value="Health">Health</option>
+          <option value="Gaming">Gaming</option>
+      </select>
+  </label>
+  <label>Frequency<select id="habitFrequency"><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select></label><label>Goal <input id="habitGoal" type="number" value="1" min="1" max="31" required /></label></div>
+  <label>Choose a colour<div class="color-options"><input checked type="radio" name="color" value="violet" id="violet"><label for="violet" class="color violet"></label><input type="radio" name="color" value="orange" id="orange"><label for="orange" class="color orange"></label><input type="radio" name="color" value="blue" id="blue"><label for="blue" class="color blue"></label><input type="radio" name="color" value="green" id="green"><label for="green" class="color green"></label></div></label><button class="primary-button submit-button" type="submit">Create habit <span>→</span></button></form></div>
   <div id="toast" class="toast" role="status"></div>
   <section class="auth-gate" id="authGate" aria-live="polite">
     <div class="auth-intro">
