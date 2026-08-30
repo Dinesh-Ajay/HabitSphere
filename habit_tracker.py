@@ -11,6 +11,7 @@ import secrets
 import threading
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from html import escape as escape_html
 from pathlib import Path
 from typing import Any
 
@@ -199,14 +200,19 @@ class User:
         return {"user_id": self.user_id, "full_name": self.full_name, "email": self.email}
 
     @classmethod
+    def validate_password(cls, password: str) -> None:
+        """Central password rule, reused by registration and password reset alike."""
+        if len(password) < 8:
+            raise ValueError("Password must contain at least 8 characters.")
+
+    @classmethod
     def validate_registration(cls, full_name: str, email: str, password: str) -> tuple[str, str]:
         cleaned_name, cleaned_email = full_name.strip(), email.strip().lower()
         if len(cleaned_name) < 2 or len(cleaned_name) > 100:
             raise ValueError("Full name must contain 2 to 100 characters.")
         if not cls.EMAIL_PATTERN.fullmatch(cleaned_email):
             raise ValueError("Enter a valid email address.")
-        if len(password) < 8:
-            raise ValueError("Password must contain at least 8 characters.")
+        cls.validate_password(password)
         return cleaned_name, cleaned_email
 
     @classmethod
@@ -292,6 +298,244 @@ class SessionManager:
             with self.lock:
                 self.sessions.pop(token, None)
             logger.info("Session revoked")
+
+    def revoke_user_sessions(self, user_id: int) -> None:
+        """Revokes every active session for one user, used after a password reset."""
+        with self.lock:
+            tokens = [token for token, session in self.sessions.items() if session["user"]["user_id"] == user_id]
+            for token in tokens:
+                del self.sessions[token]
+        if tokens:
+            logger.info("Revoked %d session(s) for user_id=%s", len(tokens), user_id)
+
+
+class PasswordResetService:
+    """Implements forgot-password OTP verification on top of the existing USERS table.
+
+    The email_sender dependency is injected (see reminder_service.SMTPEmailSender) rather
+    than imported here, because reminder_service.py already imports from this module and a
+    reverse import would create a circular dependency. app.py wires the two together.
+    """
+
+    OTP_EXPIRY_MINUTES = 10
+    RESET_TOKEN_EXPIRY_MINUTES = 10
+    MAX_OTP_ATTEMPTS = 5
+    RESEND_COOLDOWN_SECONDS = 60
+    GENERIC_MESSAGE = "If the email address is registered, a verification code has been sent."
+
+    def __init__(self, database: DatabaseManager | None = None, email_sender: Any | None = None) -> None:
+        self.database = database or DatabaseManager()
+        self.email_sender = email_sender
+
+    @staticmethod
+    def _hash_code(value: str) -> str:
+        return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _generate_otp() -> str:
+        return f"{secrets.randbelow(1_000_000):06d}"
+
+    @staticmethod
+    def _find_user_by_email(cursor, email: str) -> dict[str, Any] | None:
+        cursor.execute("SELECT user_id, full_name, email FROM USERS WHERE email = %s", (email,))
+        return cursor.fetchone()
+
+    def _send_otp_email(self, user: dict[str, Any], otp: str) -> bool:
+        if not self.email_sender:
+            logger.warning("Password reset OTP email skipped because no email sender is configured")
+            return False
+        subject = "HabitSphere Password Reset OTP"
+        plain_text_body = (
+            f"Hello {user['full_name']},\n\n"
+            "You requested a password reset for your HabitSphere account.\n\n"
+            f"Your verification code is: {otp}\n\n"
+            f"This code expires in {self.OTP_EXPIRY_MINUTES} minutes.\n\n"
+            "If you did not request this, you can safely ignore this email — your password will not be changed.\n\n"
+            "- HabitSphere"
+        )
+        html_body = f"""<div style="font-family:'DM Sans',sans-serif;background:#f7f7fb;padding:32px">
+  <div style="max-width:420px;margin:0 auto;background:#ffffff;border-radius:14px;padding:28px;box-shadow:0 10px 30px rgba(45,38,91,.06)">
+    <p style="color:#9693a6;font-size:10px;font-weight:700;letter-spacing:1.4px;margin:0 0 10px">PASSWORD RESET</p>
+    <h2 style="font-family:Outfit,sans-serif;color:#25243a;margin:0 0 14px">Reset your HabitSphere password</h2>
+    <p style="color:#5f5d70;font-size:14px;line-height:1.6;margin:0">Hello {escape_html(user['full_name'])}, use the code below to reset your password. It expires in {self.OTP_EXPIRY_MINUTES} minutes.</p>
+    <p style="font:600 32px Outfit,sans-serif;color:#7057e9;letter-spacing:6px;text-align:center;margin:24px 0">{otp}</p>
+    <p style="color:#82819a;font-size:12px;margin:0">If you did not request this, you can safely ignore this email.</p>
+  </div>
+</div>"""
+        try:
+            return bool(self.email_sender.send(user["email"], subject, plain_text_body, html_body))
+        except Exception:
+            logger.exception("Password reset OTP email delivery raised an unexpected error")
+            return False
+
+    def _issue_otp(self, cursor, connection, user: dict[str, Any], debug_expose_otp: bool) -> str | None:
+        """Invalidates any prior open request, stores a new OTP hash, and emails the code."""
+        cursor.execute("UPDATE PASSWORD_RESET_TOKENS SET used = TRUE WHERE user_id = %s AND used = FALSE", (user["user_id"],))
+        otp = self._generate_otp()
+        cursor.execute(
+            "INSERT INTO PASSWORD_RESET_TOKENS (user_id, otp_hash, otp_expires_at) VALUES (%s, %s, %s)",
+            (user["user_id"], self._hash_code(otp), datetime.now() + timedelta(minutes=self.OTP_EXPIRY_MINUTES)),
+        )
+        connection.commit()
+        if not self._send_otp_email(user, otp):
+            logger.warning("Password reset OTP email was not sent for user_id=%s", user["user_id"])
+        return otp if debug_expose_otp else None
+
+    def request_reset(self, email: str, debug_expose_otp: bool = False) -> dict[str, Any]:
+        cleaned_email = email.strip().lower()
+        if not cleaned_email or not User.EMAIL_PATTERN.fullmatch(cleaned_email):
+            raise ValueError("Enter a valid email address.")
+        connection = cursor = None
+        debug_otp = None
+        try:
+            connection = self.database.connect()
+            cursor = connection.cursor(dictionary=True)
+            user = self._find_user_by_email(cursor, cleaned_email)
+            if user:
+                debug_otp = self._issue_otp(cursor, connection, user, debug_expose_otp)
+                logger.info("Password reset requested: user_id=%s", user["user_id"])
+            else:
+                logger.info("Password reset requested for an unregistered email")
+        except Error as error:
+            logger.exception("Password reset request failed")
+            raise RuntimeError("Unable to process the request. Please try again.") from error
+        finally:
+            if cursor:
+                cursor.close()
+            if connection and connection.is_connected():
+                connection.close()
+        result = {"message": self.GENERIC_MESSAGE}
+        if debug_otp:
+            result["debug_otp"] = debug_otp
+        return result
+
+    def resend_otp(self, email: str, debug_expose_otp: bool = False) -> dict[str, Any]:
+        cleaned_email = email.strip().lower()
+        if not cleaned_email or not User.EMAIL_PATTERN.fullmatch(cleaned_email):
+            raise ValueError("Enter a valid email address.")
+        connection = cursor = None
+        debug_otp = None
+        try:
+            connection = self.database.connect()
+            cursor = connection.cursor(dictionary=True)
+            user = self._find_user_by_email(cursor, cleaned_email)
+            if user:
+                cursor.execute(
+                    "SELECT created_at FROM PASSWORD_RESET_TOKENS WHERE user_id = %s ORDER BY created_at DESC LIMIT 1",
+                    (user["user_id"],),
+                )
+                last = cursor.fetchone()
+                if last:
+                    elapsed = (datetime.now() - last["created_at"]).total_seconds()
+                    if elapsed < self.RESEND_COOLDOWN_SECONDS:
+                        wait_seconds = max(1, int(self.RESEND_COOLDOWN_SECONDS - elapsed))
+                        logger.warning("Password reset resend throttled: user_id=%s", user["user_id"])
+                        raise ValueError(f"Please wait {wait_seconds} seconds before requesting a new code.")
+                debug_otp = self._issue_otp(cursor, connection, user, debug_expose_otp)
+                logger.info("Password reset OTP resent: user_id=%s", user["user_id"])
+            else:
+                logger.info("Password reset resend requested for an unregistered email")
+        except Error as error:
+            logger.exception("Password reset resend failed")
+            raise RuntimeError("Unable to process the request. Please try again.") from error
+        finally:
+            if cursor:
+                cursor.close()
+            if connection and connection.is_connected():
+                connection.close()
+        result = {"message": self.GENERIC_MESSAGE}
+        if debug_otp:
+            result["debug_otp"] = debug_otp
+        return result
+
+    def verify_otp(self, email: str, otp: str) -> dict[str, Any]:
+        cleaned_email, cleaned_otp = email.strip().lower(), otp.strip()
+        if not cleaned_email or not cleaned_otp:
+            raise ValueError("Email and verification code are required.")
+        connection = cursor = None
+        try:
+            connection = self.database.connect()
+            cursor = connection.cursor(dictionary=True)
+            user = self._find_user_by_email(cursor, cleaned_email)
+            if not user:
+                logger.warning("OTP verification attempted for an unregistered email")
+                raise ValueError("Invalid or expired verification code.")
+            cursor.execute(
+                """SELECT reset_id, otp_hash, otp_expires_at, attempts FROM PASSWORD_RESET_TOKENS
+                   WHERE user_id = %s AND used = FALSE ORDER BY created_at DESC LIMIT 1""",
+                (user["user_id"],),
+            )
+            record = cursor.fetchone()
+            if not record:
+                raise ValueError("Invalid or expired verification code. Please request a new one.")
+            if record["attempts"] >= self.MAX_OTP_ATTEMPTS:
+                cursor.execute("UPDATE PASSWORD_RESET_TOKENS SET used = TRUE WHERE reset_id = %s", (record["reset_id"],))
+                connection.commit()
+                logger.warning("OTP verification blocked after too many attempts: user_id=%s", user["user_id"])
+                raise ValueError("Too many incorrect attempts. Please request a new code.")
+            if record["otp_expires_at"] <= datetime.now():
+                cursor.execute("UPDATE PASSWORD_RESET_TOKENS SET used = TRUE WHERE reset_id = %s", (record["reset_id"],))
+                connection.commit()
+                logger.warning("Expired OTP verification attempt: user_id=%s", user["user_id"])
+                raise ValueError("This code has expired. Please request a new one.")
+            if not hmac.compare_digest(self._hash_code(cleaned_otp), record["otp_hash"]):
+                cursor.execute("UPDATE PASSWORD_RESET_TOKENS SET attempts = attempts + 1 WHERE reset_id = %s", (record["reset_id"],))
+                connection.commit()
+                remaining = max(0, self.MAX_OTP_ATTEMPTS - (record["attempts"] + 1))
+                logger.warning("Incorrect OTP attempt: user_id=%s remaining=%s", user["user_id"], remaining)
+                raise ValueError(f"Incorrect code. {remaining} attempt(s) remaining.")
+            reset_token = secrets.token_urlsafe(32)
+            cursor.execute(
+                """UPDATE PASSWORD_RESET_TOKENS SET otp_verified = TRUE, reset_token_hash = %s, reset_token_expires_at = %s
+                   WHERE reset_id = %s""",
+                (self._hash_code(reset_token), datetime.now() + timedelta(minutes=self.RESET_TOKEN_EXPIRY_MINUTES), record["reset_id"]),
+            )
+            connection.commit()
+            logger.info("OTP verified successfully: user_id=%s", user["user_id"])
+            return {"message": "Verification successful.", "reset_token": reset_token}
+        except Error as error:
+            logger.exception("OTP verification failed")
+            raise RuntimeError("Unable to verify the code. Please try again.") from error
+        finally:
+            if cursor:
+                cursor.close()
+            if connection and connection.is_connected():
+                connection.close()
+
+    def reset_password(self, reset_token: str, new_password: str) -> dict[str, Any]:
+        cleaned_token = (reset_token or "").strip()
+        if not cleaned_token:
+            raise ValueError("Your password reset session has expired. Please start again.")
+        User.validate_password(new_password)
+        connection = cursor = None
+        try:
+            connection = self.database.connect()
+            cursor = connection.cursor(dictionary=True)
+            cursor.execute(
+                """SELECT reset_id, user_id, reset_token_expires_at FROM PASSWORD_RESET_TOKENS
+                   WHERE reset_token_hash = %s AND otp_verified = TRUE AND used = FALSE""",
+                (self._hash_code(cleaned_token),),
+            )
+            record = cursor.fetchone()
+            if not record or record["reset_token_expires_at"] <= datetime.now():
+                logger.warning("Password reset attempted with an invalid or expired authorization")
+                raise ValueError("Your password reset session has expired. Please start again.")
+            cursor.execute(
+                "UPDATE USERS SET password = %s WHERE user_id = %s",
+                (PasswordManager.hash_password(new_password), record["user_id"]),
+            )
+            cursor.execute("UPDATE PASSWORD_RESET_TOKENS SET used = TRUE WHERE reset_id = %s", (record["reset_id"],))
+            connection.commit()
+            logger.info("Password reset completed: user_id=%s", record["user_id"])
+            return {"message": "Your password has been updated successfully.", "user_id": record["user_id"]}
+        except Error as error:
+            logger.exception("Password reset failed")
+            raise RuntimeError("Unable to reset the password. Please try again.") from error
+        finally:
+            if cursor:
+                cursor.close()
+            if connection and connection.is_connected():
+                connection.close()
 
 
 class DashboardService:

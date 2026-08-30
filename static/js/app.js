@@ -36,7 +36,32 @@ async function authRequest(url, payload = null) {
   return result;
 }
 function showAuthFeedback(message = '', type = 'error') { const el = $('#authFeedback'); el.textContent = message; el.className = `auth-feedback ${message ? `visible ${type}` : ''}`; }
-function setAuthMode(mode) { const registering = mode === 'register'; $('#loginForm').classList.toggle('hidden', registering); $('#registerForm').classList.toggle('hidden', !registering); document.querySelectorAll('[data-auth-mode]').forEach(button => button.classList.toggle('active', button.dataset.authMode === mode)); showAuthFeedback(); }
+// Forgot-password flow state, kept in memory only (never localStorage/sessionStorage).
+let resetFlow = { email: '', resetToken: '', cooldownTimer: null };
+function clearResetFlowState() {
+  resetFlow.email = ''; resetFlow.resetToken = '';
+  if (resetFlow.cooldownTimer) { clearInterval(resetFlow.cooldownTimer); resetFlow.cooldownTimer = null; }
+  ['forgotPasswordForm', 'otpForm', 'resetPasswordForm'].forEach(id => $('#' + id).reset());
+  const resendLink = $('#resendOtpLink'); if (resendLink) { resendLink.disabled = false; resendLink.textContent = 'Resend OTP'; }
+}
+const AUTH_MODE_FORMS = { login: 'loginForm', register: 'registerForm', 'forgot-email': 'forgotPasswordForm', 'verify-otp': 'otpForm', 'reset-password': 'resetPasswordForm', 'reset-success': 'resetSuccessBlock' };
+function setAuthMode(mode) {
+  Object.entries(AUTH_MODE_FORMS).forEach(([key, id]) => $('#' + id).classList.toggle('hidden', key !== mode));
+  document.querySelectorAll('.auth-tab').forEach(button => button.classList.toggle('active', button.dataset.authMode === mode));
+  $('.auth-tabs').style.display = (mode === 'login' || mode === 'register') ? '' : 'none';
+  if (mode === 'login') clearResetFlowState();
+  showAuthFeedback();
+}
+function startResendCooldown(seconds) {
+  const link = $('#resendOtpLink'); if (!link) return;
+  let remaining = seconds; link.disabled = true; link.textContent = `Resend OTP (${remaining}s)`;
+  if (resetFlow.cooldownTimer) clearInterval(resetFlow.cooldownTimer);
+  resetFlow.cooldownTimer = setInterval(() => {
+    remaining -= 1;
+    if (remaining <= 0) { clearInterval(resetFlow.cooldownTimer); resetFlow.cooldownTimer = null; link.disabled = false; link.textContent = 'Resend OTP'; }
+    else { link.textContent = `Resend OTP (${remaining}s)`; }
+  }, 1000);
+}
 function signInUser(user) { document.body.classList.add('authenticated'); $('#profileName').textContent = user.full_name; $('#profileEmail').textContent = user.email; $('#profileInitial').textContent = user.full_name.charAt(0).toUpperCase(); $('#pageTitle').textContent = `Welcome, ${user.full_name.split(' ')[0]}.`; loadDashboard(); loadHabits(); loadAnalytics(); loadSettings(true); }
 async function loadDashboard() {
   try {
@@ -143,6 +168,12 @@ function initializeAuthentication() {
   $('#registerForm').addEventListener('submit', async event => { event.preventDefault(); const button = event.submitter; button.disabled = true; try { const result = await authRequest('/api/auth/register', { full_name: $('#registerName').value, email: $('#registerEmail').value, password: $('#registerPassword').value }); $('#loginEmail').value = result.user.email; $('#registerForm').reset(); setAuthMode('login'); showAuthFeedback(result.message, 'success'); } catch (error) { showAuthFeedback(error.message); } finally { button.disabled = false; } });
   $('#loginForm').addEventListener('submit', async event => { event.preventDefault(); const button = event.submitter; button.disabled = true; try { const result = await authRequest('/api/auth/login', { email: $('#loginEmail').value, password: $('#loginPassword').value }); signInUser(result.user); toast('Welcome back, ' + result.user.full_name.split(' ')[0] + '!'); } catch (error) { showAuthFeedback(error.message); } finally { button.disabled = false; } });
   $('#logoutButton').addEventListener('click', async () => { try { await authRequest('/api/auth/logout', {}); } catch (error) { console.error(error); } finally { signOutUser(); } });
+  $('#forgotPasswordLink').addEventListener('click', () => setAuthMode('forgot-email'));
+  $('#forgotPasswordForm').addEventListener('submit', async event => { event.preventDefault(); const button = event.submitter; button.disabled = true; try { const email = $('#forgotEmail').value.trim().toLowerCase(); const result = await authRequest('/api/auth/forgot-password', { email }); resetFlow.email = email; setAuthMode('verify-otp'); showAuthFeedback(result.message, 'success'); startResendCooldown(60); } catch (error) { showAuthFeedback(error.message); } finally { button.disabled = false; } });
+  $('#otpForm').addEventListener('submit', async event => { event.preventDefault(); const button = event.submitter; button.disabled = true; try { const result = await authRequest('/api/auth/verify-reset-otp', { email: resetFlow.email, otp: $('#otpCode').value.trim() }); resetFlow.resetToken = result.reset_token; setAuthMode('reset-password'); showAuthFeedback(); } catch (error) { showAuthFeedback(error.message); } finally { button.disabled = false; } });
+  $('#resendOtpLink').addEventListener('click', async () => { const link = $('#resendOtpLink'); if (link.disabled) return; try { const result = await authRequest('/api/auth/resend-reset-otp', { email: resetFlow.email }); showAuthFeedback(result.message, 'success'); startResendCooldown(60); } catch (error) { showAuthFeedback(error.message); } });
+  $('#resetPasswordForm').addEventListener('submit', async event => { event.preventDefault(); const button = event.submitter; button.disabled = true; try { const newPassword = $('#newPassword').value, confirmPassword = $('#confirmNewPassword').value; if (newPassword !== confirmPassword) throw new Error('Passwords do not match.'); await authRequest('/api/auth/reset-password', { reset_token: resetFlow.resetToken, new_password: newPassword }); setAuthMode('reset-success'); } catch (error) { showAuthFeedback(error.message); } finally { button.disabled = false; } });
+  $('#backToLoginFromSuccess').addEventListener('click', () => setAuthMode('login'));
   $('#quickTrackToday').addEventListener('click', () => document.querySelector('[data-view="habits"]').click());
   $('#quickViewReports').addEventListener('click', () => document.querySelector('[data-view="reports"]').click());
   authRequest('/api/auth/me').then(result => signInUser(result.user)).catch(() => { signOutUser(); if (location.protocol === 'file:') showAuthFeedback('Start the site with python app.py, then open http://127.0.0.1:8000.', 'error'); });

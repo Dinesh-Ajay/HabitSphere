@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import date
 from http.cookies import SimpleCookie
 from http import HTTPStatus
@@ -14,8 +15,10 @@ from configuration import load_environment
 
 load_environment()
 
-from habit_tracker import Analytics, ChartGenerator, DashboardService, DatabaseManager, Habit, HabitTracker, JSONManager, ReportGenerator, SessionManager, User, logger
+from habit_tracker import Analytics, ChartGenerator, DashboardService, DatabaseManager, Habit, HabitTracker, JSONManager, PasswordResetService, ReportGenerator, SessionManager, User, logger
 from reminder_scheduler import ReminderScheduler
+# Reuses the SMTP email delivery already built for reminders instead of a second email service.
+from reminder_service import SMTPEmailSender
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -26,6 +29,10 @@ tracker_manager = HabitTracker()
 analytics_manager = Analytics()
 report_generator = ReportGenerator(analytics_manager)
 chart_generator = ChartGenerator(analytics_manager)
+password_reset_service = PasswordResetService(email_sender=SMTPEmailSender())
+# Local-only convenience: when true, forgot-password responses include the OTP so you can
+# test the flow without a working SMTP setup. Never enable this in a real deployment.
+DEBUG_EXPOSE_OTP = os.getenv("DEBUG_EXPOSE_OTP", "false").strip().lower() == "true"
 
 
 class HabitSphereRequestHandler(SimpleHTTPRequestHandler):
@@ -165,6 +172,27 @@ class HabitSphereRequestHandler(SimpleHTTPRequestHandler):
             if path == "/api/auth/logout":
                 session_manager.revoke_session(self.session_token())
                 self.send_json({"success": True, "message": "You have been logged out."}, cookie=self.session_cookie("", 0))
+                return
+            if path == "/api/auth/forgot-password":
+                payload = self.read_json_body()
+                result = password_reset_service.request_reset(payload.get("email", ""), debug_expose_otp=DEBUG_EXPOSE_OTP)
+                self.send_json({"success": True, **result})
+                return
+            if path == "/api/auth/resend-reset-otp":
+                payload = self.read_json_body()
+                result = password_reset_service.resend_otp(payload.get("email", ""), debug_expose_otp=DEBUG_EXPOSE_OTP)
+                self.send_json({"success": True, **result})
+                return
+            if path == "/api/auth/verify-reset-otp":
+                payload = self.read_json_body()
+                result = password_reset_service.verify_otp(payload.get("email", ""), payload.get("otp", ""))
+                self.send_json({"success": True, **result})
+                return
+            if path == "/api/auth/reset-password":
+                payload = self.read_json_body()
+                result = password_reset_service.reset_password(payload.get("reset_token", ""), payload.get("new_password", ""))
+                session_manager.revoke_user_sessions(result["user_id"])
+                self.send_json({"success": True, "message": result["message"]})
                 return
             if path == "/api/habits":
                 user = self.authenticated_user()

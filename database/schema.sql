@@ -9,6 +9,24 @@ CREATE TABLE IF NOT EXISTS USERS (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS PASSWORD_RESET_TOKENS (
+    reset_id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    otp_hash VARCHAR(64) NOT NULL,
+    otp_expires_at DATETIME NOT NULL,
+    otp_verified BOOLEAN NOT NULL DEFAULT FALSE,
+    attempts INT NOT NULL DEFAULT 0,
+    reset_token_hash VARCHAR(64) NULL,
+    reset_token_expires_at DATETIME NULL,
+    used BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_reset_user (user_id),
+    KEY idx_reset_token_hash (reset_token_hash),
+    CONSTRAINT fk_reset_user
+        FOREIGN KEY (user_id) REFERENCES USERS(user_id)
+        ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS HABITS (
     habit_id INT AUTO_INCREMENT PRIMARY KEY,
     user_id INT NOT NULL,
